@@ -1,0 +1,29 @@
+# SCAR Algorithm Implementation Dependencies
+
+# Core libraries
+networkx>=3.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+
+# Simulation
+simpy>=4.0.1
+
+# Visualization
+pyqt5>=5.15.0
+plotly>=5.14.0
+
+# Configuration
+pyyaml>=6.0
+
+# Testing
+pytest>=7.3.0
+pytest-cov>=4.1.0
+
+# Code quality
+black>=23.3.0
+flake8>=6.0.0
+
+# Documentation
+sphinx>=7.0.0
+sphinx-rtd-theme>=1.3.0
+

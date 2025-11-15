@@ -1,0 +1,4 @@
+"""
+Core SCAR algorithm implementation
+"""
+

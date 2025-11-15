@@ -1,0 +1,122 @@
+# SCAR Algorithm Configuration
+# Moderately Complex Network Topology
+
+# Network Topology Settings
+network:
+  # Number of nodes in the network
+  # Using 12 nodes for a more interesting topology
+  num_nodes: 12
+  
+  # Network topology type: "ring", "grid", "star", "random", or "file"
+  # Grid: Nodes arranged in a grid pattern (good balance of simplicity and complexity)
+  topology_type: "grid"
+  
+  # File path for custom topology (if topology_type is "file")
+  topology_file: null
+  
+  # Link capacity range (Mbps)
+  # Varying capacities to create more realistic network conditions
+  link_capacity_min: 30
+  link_capacity_max: 100
+  
+  # Initial link latency (ms)
+  # Slight variation in latency for realism
+  initial_latency: 5
+
+# SCAR Algorithm Parameters
+algorithm:
+  # Congestion threshold (0.0 to 1.0)
+  # When link utilization exceeds this value, the link is considered "congested"
+  # Example: 0.7 means a link is congested when it's 70% full
+  congestion_threshold: 0.7
+  
+  # Stability threshold (0.0 to 1.0)
+  # Higher value = more stable routes (fewer route changes)
+  # Lower value = more adaptive routes (more route changes based on congestion)
+  stability_threshold: 0.6
+  
+  # Route update interval (simulation time units)
+  # How often the algorithm checks if routes need updating
+  route_update_interval: 10
+  
+  # Maximum number of route changes per time window
+  # Prevents too frequent route changes (maintains stability)
+  max_route_changes_per_window: 3
+  
+  # Time window for route change tracking (simulation time units)
+  route_change_window: 50
+  
+  # Weight for congestion in route selection (0.0 to 1.0)
+  # How much the algorithm prioritizes avoiding congestion
+  # 0.6 = 60% weight on congestion, 40% on stability
+  congestion_weight: 0.6
+  
+  # Weight for stability in route selection (0.0 to 1.0)
+  # How much the algorithm prioritizes route stability
+  # Should add up to 1.0 with congestion_weight
+  stability_weight: 0.4
+
+# Simulation Settings
+simulation:
+  # Simulation duration (time units)
+  # How long the simulation runs
+  duration: 1000
+  
+  # Time step for simulation
+  time_step: 1.0
+  
+  # Number of packets to generate
+  # More packets for a more complex simulation
+  num_packets: 80
+  
+  # Packet generation rate (packets per time unit)
+  packet_rate: 0.1
+  
+  # Packet size (bytes)
+  # Standard Ethernet frame size
+  packet_size: 1500
+  
+  # Traffic pattern: "constant", "bursty", "random"
+  # Random: Packets generated at random times between random nodes
+  traffic_pattern: "random"
+
+# Visualization Settings
+visualization:
+  # Enable visualization
+  enabled: true
+  
+  # Animation speed multiplier
+  # 1.0 = normal speed, 2.0 = 2x faster, 0.5 = 2x slower
+  animation_speed: 1.0
+  
+  # Node size in visualization (pixels)
+  node_size: 400
+  
+  # Link width multiplier
+  link_width_multiplier: 2.0
+  
+  # Update interval for visualization (milliseconds)
+  # How often the display updates
+  update_interval: 100
+  
+  # Color scheme for congestion levels
+  congestion_colors:
+    low: "#00FF00"      # Green - Low congestion (< 35% utilization)
+    medium: "#FFFF00"   # Yellow - Medium congestion (35-70% utilization)
+    high: "#FF0000"     # Red - High congestion (> 70% utilization)
+  
+  # Export settings
+  export_images: false
+  export_video: false
+
+# Performance Metrics
+metrics:
+  # Metrics to track
+  track_packet_delivery: true
+  track_delay: true
+  track_throughput: true
+  track_route_stability: true
+  track_congestion_levels: true
+  
+  # Metrics update interval (simulation time units)
+  update_interval: 10
