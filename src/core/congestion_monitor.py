@@ -96,6 +96,7 @@ class CongestionMonitor:
     def get_link_congestion_score(self, node1: int, node2: int) -> float:
         """
         Get congestion score for a link (0.0 to 1.0).
+        Uses actual utilization as the score for dynamic load-aware routing.
         Higher score means more congested.
         
         Args:
@@ -103,10 +104,13 @@ class CongestionMonitor:
             node2: Second node ID
         
         Returns:
-            Congestion score
+            Congestion score (actual utilization 0.0 to 1.0)
+            This ensures routes are selected based on current load, not just threshold
         """
         utilization = self.topology.get_link_utilization(node1, node2)
-        return min(1.0, utilization / self.congestion_threshold) if self.congestion_threshold > 0 else 0.0
+        # Return actual utilization as congestion score (0.0 to 1.0)
+        # This ensures routes are selected based on current load for dynamic routing
+        return min(1.0, max(0.0, utilization))
     
     def get_path_congestion_score(self, path: List[int]) -> float:
         """

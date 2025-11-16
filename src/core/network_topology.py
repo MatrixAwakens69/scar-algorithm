@@ -38,6 +38,8 @@ class NetworkTopology:
             self._create_ring_topology(num_nodes)
         elif topology_type == 'star':
             self._create_star_topology(num_nodes)
+        elif topology_type == 'custom_6':
+            self._create_custom_6_topology()
         elif topology_type == 'file':
             self._load_from_file(self.config.get('topology_file'))
         else:
@@ -82,6 +84,37 @@ class NetworkTopology:
         """Create a star network topology."""
         self.graph = nx.star_graph(num_nodes - 1)
     
+    def _create_custom_6_topology(self):
+        """Create a custom 6-node topology (not a simple hexagon).
+        
+        Creates a topology with nodes arranged in a tree-like structure:
+        Node 0 (root) connected to nodes 1, 2, 3
+        Node 1 connected to node 4
+        Node 2 connected to node 5
+        Additional cross-connections for redundancy
+        """
+        self.graph = nx.Graph()
+        # Add 6 nodes
+        for i in range(6):
+            self.graph.add_node(i)
+        
+        # Create a tree-like structure with cross-connections
+        # Root node 0 connected to 1, 2, 3
+        self.graph.add_edge(0, 1)
+        self.graph.add_edge(0, 2)
+        self.graph.add_edge(0, 3)
+        
+        # Node 1 connected to 4
+        self.graph.add_edge(1, 4)
+        
+        # Node 2 connected to 5
+        self.graph.add_edge(2, 5)
+        
+        # Add cross-connections for redundancy (not a simple hexagon)
+        self.graph.add_edge(3, 4)
+        self.graph.add_edge(3, 5)
+        self.graph.add_edge(1, 2)
+    
     def _load_from_file(self, filepath: str):
         """Load topology from file."""
         # This would load from a file format (e.g., GraphML, JSON)
@@ -94,12 +127,16 @@ class NetworkTopology:
         capacity_max = self.config.get('link_capacity_max', 100)
         initial_latency = self.config.get('initial_latency', 5)
         
+        # Reduce capacities by factor of 10
+        capacity_min = capacity_min / 10.0
+        capacity_max = capacity_max / 10.0
+        
         for u, v in self.graph.edges():
-            # Random capacity within range
+            # Random capacity within range (reduced by 10x)
             capacity = random.uniform(capacity_min, capacity_max)
             
             # Set link attributes
-            self.graph[u][v]['capacity'] = capacity  # Mbps
+            self.graph[u][v]['capacity'] = capacity  # Mbps (reduced by 10x)
             self.graph[u][v]['current_load'] = 0.0  # Mbps
             self.graph[u][v]['utilization'] = 0.0  # 0.0 to 1.0
             self.graph[u][v]['latency'] = initial_latency  # ms

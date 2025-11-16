@@ -92,7 +92,8 @@ class TrafficGenerator:
             current_time += interval - (burst_size * 0.01)
     
     def generate_random_traffic(self, num_packets: int, packet_size: float = 1500.0,
-                               time_range: Tuple[float, float] = (0.0, 1000.0)):
+                               time_range: Tuple[float, float] = (0.0, 1000.0),
+                               source: Optional[int] = None, destination: Optional[int] = None):
         """
         Generate random traffic pattern.
         
@@ -100,14 +101,22 @@ class TrafficGenerator:
             num_packets: Number of packets to generate
             packet_size: Packet size in bytes
             time_range: (start_time, end_time) tuple
+            source: Fixed source node (if None, uses first node)
+            destination: Fixed destination node (if None, uses last node)
         """
         start_time, end_time = time_range
         
+        # Use fixed source and destination if not provided
+        if source is None:
+            source = self.nodes[0]  # First node as source
+        if destination is None:
+            destination = self.nodes[-1]  # Last node as destination
+        
+        # Ensure source and destination are different
+        if source == destination and len(self.nodes) > 1:
+            destination = self.nodes[-1] if source != self.nodes[-1] else self.nodes[0]
+        
         for _ in range(num_packets):
-            # Random source and destination
-            source = random.choice(self.nodes)
-            destination = random.choice([n for n in self.nodes if n != source])
-            
             # Random generation time
             gen_time = random.uniform(start_time, end_time)
             
@@ -148,13 +157,13 @@ class TrafficGenerator:
         Args:
             num_flows: Number of flows to generate
             pattern: Traffic pattern for each flow
-            **kwargs: Pattern-specific parameters
+            **kwargs: Pattern-specific parameters (can include fixed source/destination)
         """
+        # Use fixed source and destination if provided, otherwise use defaults
+        source = kwargs.get('source', self.nodes[0])
+        destination = kwargs.get('destination', self.nodes[-1])
+        
         for _ in range(num_flows):
-            # Random source and destination
-            source = random.choice(self.nodes)
-            destination = random.choice([n for n in self.nodes if n != source])
-            
             flow_kwargs = kwargs.copy()
             flow_kwargs['source'] = source
             flow_kwargs['destination'] = destination

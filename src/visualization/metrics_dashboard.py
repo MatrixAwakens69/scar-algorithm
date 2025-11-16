@@ -138,6 +138,34 @@ class MetricsDashboard:
         Args:
             ax: Matplotlib axis to render on
         """
+        # Store reference to existing twin axes to remove them
+        # Find all axes that share the same x-axis (twin axes)
+        if hasattr(ax, 'figure') and ax.figure:
+            existing_twins = []
+            for sibling in ax.figure.axes:
+                if sibling is not ax:
+                    # Check if it's a twin axis by checking if it shares the same x-axis
+                    try:
+                        if hasattr(sibling, 'sharex') and sibling.sharex() is not None:
+                            if sibling.sharex() == ax:
+                                existing_twins.append(sibling)
+                        # Also check by position - twin axes are typically on the right
+                        elif hasattr(sibling, 'get_position'):
+                            pos = sibling.get_position()
+                            if pos and len(pos) > 0:
+                                # Check if it's positioned on the right (twin axis)
+                                if hasattr(pos[0], 'x1') and pos[0].x1 > 0.9:
+                                    existing_twins.append(sibling)
+                    except:
+                        pass
+            
+            # Remove existing twin axes to prevent duplicates
+            for twin_ax in existing_twins:
+                try:
+                    twin_ax.remove()
+                except:
+                    pass
+        
         ax.clear()
         
         if len(self.time_history) == 0:
@@ -153,9 +181,19 @@ class MetricsDashboard:
             return
         
         # Plot multiple metrics on same axis with different y-scales
-        ax2 = ax.twinx()
-        ax3 = ax.twinx()
-        ax3.spines['right'].set_position(('outward', 60))
+        # Create twin axes for delay and utilization
+        # IMPORTANT: Create ax2 first, then ax3, and ensure we only create them once
+        # Check if ax2 already exists as a stored attribute
+        if not hasattr(ax, '_ax2'):
+            ax._ax2 = ax.twinx()
+        ax2 = ax._ax2
+        ax2.clear()  # Clear to prevent duplicate plots
+        
+        if not hasattr(ax, '_ax3'):
+            ax._ax3 = ax.twinx()
+            ax._ax3.spines['right'].set_position(('outward', 60))
+        ax3 = ax._ax3
+        ax3.clear()  # Clear to prevent duplicate plots
         
         # Primary y-axis: Packet Delivery Ratio
         if len(self.packet_delivery_history) > 0 and len(self.packet_delivery_history) == len(time_list):
@@ -167,7 +205,7 @@ class MetricsDashboard:
         ax.tick_params(axis='y', labelcolor='b', labelsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')
         
-        # Secondary y-axis: Average Delay
+        # Secondary y-axis: Average Delay (ONLY ONE PLOT)
         if len(self.avg_delay_history) > 0 and len(self.avg_delay_history) == len(time_list):
             ax2.plot(time_list, list(self.avg_delay_history), 'r-', 
                     label='Avg Delay', linewidth=2, alpha=0.8)

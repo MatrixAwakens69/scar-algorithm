@@ -11,26 +11,36 @@ from functools import lru_cache
 from src.core.network_topology import NetworkTopology
 from src.core.congestion_monitor import CongestionMonitor
 
+# Forward declaration for simulator (to avoid circular import)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.simulation.network_simulator import NetworkSimulator
+
 
 class RouteDiscovery:
     """Discovers routes between nodes in the network."""
     
-    def __init__(self, topology: NetworkTopology, congestion_monitor: CongestionMonitor):
+    def __init__(self, topology: NetworkTopology, congestion_monitor: CongestionMonitor, simulator: Optional['NetworkSimulator'] = None):
         """
         Initialize route discovery.
         
         Args:
             topology: NetworkTopology instance
             congestion_monitor: CongestionMonitor instance
+            simulator: Optional NetworkSimulator instance for queueing delay calculation
         """
         self.topology = topology
         self.congestion_monitor = congestion_monitor
+        self.simulator = simulator  # For accessing node queues and calculating queueing delay
         
         # Caching for performance
         self._path_cache: Dict[Tuple[int, int, str], Optional[List[int]]] = {}
         self._evaluation_cache: Dict[Tuple[Tuple[int, ...], float, float], Dict] = {}
         self._weighted_graph_cache = None
         self._weighted_graph_dirty = True
+        
+        # Track when to invalidate evaluation cache (when congestion changes significantly)
+        self._last_congestion_check: Dict[Tuple[int, int], float] = {}
     
     def find_shortest_path(self, source: int, destination: int, 
                           metric: str = 'hop') -> Optional[List[int]]:
@@ -97,16 +107,58 @@ class RouteDiscovery:
         except (nx.NetworkXNoPath, StopIteration):
             return []
     
+    def _calculate_link_delay(self, u: int, v: int, packet_size: float = 15000.0) -> float:
+        """
+        Calculate total delay for a link (transmission + queueing).
+        
+        Args:
+            u: Source node
+            v: Destination node
+            packet_size: Packet size in bytes
+            
+        Returns:
+            Total delay in seconds (transmission time + queueing delay)
+        """
+        # Get link properties
+        link_capacity = self.topology.get_link_capacity(u, v)
+        link_latency = self.topology.graph[u][v].get('latency', 5.0)
+        
+        # Transmission time = packet_size / capacity + latency
+        transmission_time = (packet_size * 8) / (link_capacity * 1e6) + (link_latency / 1000.0)
+        
+        # Calculate queueing delay at node u
+        queueing_delay = 0.0
+        if self.simulator and u in self.simulator.node_queues:
+            queue_length = len(self.simulator.node_queues[u])
+            if queue_length > 0 and link_capacity > 0:
+                # Estimate queueing delay: packets in queue * transmission time per packet
+                # This is a simplified model - in reality, queueing depends on arrival/service rates
+                avg_packet_size = 15000.0  # bytes
+                service_time = (avg_packet_size * 8) / (link_capacity * 1e6)
+                queueing_delay = queue_length * service_time
+        
+        return transmission_time + queueing_delay
+    
     def _get_weighted_graph(self):
-        """Get or create weighted graph with congestion scores (cached)."""
-        if self._weighted_graph_cache is None or self._weighted_graph_dirty:
-            # Create weighted graph with congestion scores
-            self._weighted_graph_cache = self.topology.graph.copy()
-            for u, v in self._weighted_graph_cache.edges():
-                congestion_score = self.congestion_monitor.get_link_congestion_score(u, v)
-                self._weighted_graph_cache[u][v]['congestion_weight'] = congestion_score
-            self._weighted_graph_dirty = False
-        return self._weighted_graph_cache
+        """Get or create weighted graph with total delay (transmission + queueing) as cost.
+        
+        Uses a cost function that considers:
+        1. Transmission delay (packet_size / capacity + latency)
+        2. Queueing delay (estimated from packets waiting at node)
+        3. This ensures paths with lower total delay are preferred, even if longer
+        """
+        # Always rebuild weighted graph to get current delay values (dynamic routing)
+        weighted_graph = self.topology.graph.copy()
+        packet_size = 4000.0  # Standard packet size (increased by 10x)
+        
+        for u, v in weighted_graph.edges():
+            # Calculate total delay (transmission + queueing)
+            total_delay = self._calculate_link_delay(u, v, packet_size)
+            
+            # Use delay as cost (lower delay = lower cost = preferred)
+            # Scale delay to reasonable range (seconds to cost units)
+            weighted_graph[u][v]['congestion_weight'] = total_delay * 1000.0  # Convert to ms for better scaling
+        return weighted_graph
     
     def _invalidate_cache(self):
         """Invalidate cached weighted graph when congestion changes."""
@@ -115,6 +167,8 @@ class RouteDiscovery:
         keys_to_remove = [k for k in self._path_cache.keys() if k[2] == 'congestion']
         for k in keys_to_remove:
             del self._path_cache[k]
+        # Also clear evaluation cache since congestion affects path evaluation
+        self._evaluation_cache.clear()
     
     def _find_least_congested_path(self, source: int, destination: int) -> Optional[List[int]]:
         """Find path with minimum congestion."""
@@ -173,6 +227,31 @@ class RouteDiscovery:
         total_latency = self.topology.get_path_cost(path, metric='latency')
         congestion_score = self.congestion_monitor.get_path_congestion_score(path)
         
+        # Calculate total path delay (transmission + queueing) - this is the key metric
+        # Paths with lower total delay are preferred, even if longer
+        total_path_delay = 0.0
+        packet_size = 15000.0  # Standard packet size (increased by 10x)
+        for i in range(len(path) - 1):
+            u, v = path[i], path[i + 1]
+            link_delay = self._calculate_link_delay(u, v, packet_size)
+            total_path_delay += link_delay
+        
+        # Calculate path capacity (minimum capacity along the path - bottleneck)
+        path_capacity = float('inf')
+        for i in range(len(path) - 1):
+            u, v = path[i], path[i + 1]
+            link_capacity = self.topology.get_link_capacity(u, v)
+            path_capacity = min(path_capacity, link_capacity)
+        
+        # Normalize capacity (0.0 to 1.0, higher is better)
+        max_capacity = 10.0  # Reduced from 100.0 (capacities are now 10x smaller)
+        normalized_capacity = min(path_capacity / max_capacity, 1.0) if max_capacity > 0 else 0.0
+        
+        # Normalize delay (lower is better) - convert to score (higher is better)
+        # Assume max reasonable delay is 1 second (1000ms)
+        max_delay = 1.0  # seconds
+        normalized_delay_score = 1.0 - min(total_path_delay / max_delay, 1.0)
+        
         # Normalize scores (lower is better for congestion)
         # For combined score, we'll use inverse of congestion
         normalized_congestion = 1.0 - congestion_score
@@ -182,8 +261,20 @@ class RouteDiscovery:
         stability_score = 1.0
         
         # Combined score (higher is better)
-        combined_score = (normalized_congestion * congestion_weight + 
-                         stability_score * stability_weight)
+        # Prioritize congestion heavily (60%) - avoid congested paths
+        # Total delay (25%), capacity (10%), stability (5%)
+        # When congestion is high, it dominates the score
+        combined_score = (normalized_congestion * 0.6 +   # Congestion is most important (avoid congested paths)
+                         normalized_delay_score * 0.25 +  # Total delay matters
+                         normalized_capacity * 0.1 +      # Capacity matters
+                         stability_score * 0.05)          # Stability matters less
+        
+        # For load balancing, also consider path length (shorter paths preferred if delay/congestion are similar)
+        # Normalize hop count (inverse - shorter is better)
+        max_hops = 10  # Assume max 10 hops for normalization
+        normalized_hops = 1.0 - (min(hop_count, max_hops) / max_hops)
+        # Add small weight for path length (10% weight)
+        combined_score = combined_score * 0.9 + normalized_hops * 0.1
         
         return {
             'path': path,
@@ -211,8 +302,20 @@ class RouteDiscovery:
         Returns:
             Dictionary with best path and evaluation metrics
         """
-        # Find candidate paths - reduced from k=5 to k=3 for performance
-        candidate_paths = self.find_k_shortest_paths(source, destination, k=3, metric='hop')
+        # Find candidate paths - use k=5 to ensure we get all reasonable paths including direct paths
+        # This is important to find alternative routes when congestion occurs
+        candidate_paths = self.find_k_shortest_paths(source, destination, k=5, metric='hop')
+        
+        # Also try to find paths by congestion metric to ensure we consider less congested paths
+        congestion_paths = self.find_k_shortest_paths(source, destination, k=3, metric='congestion')
+        
+        # Combine and deduplicate paths
+        all_paths = candidate_paths.copy()
+        for path in congestion_paths:
+            if path not in all_paths:
+                all_paths.append(path)
+        
+        candidate_paths = all_paths[:5]  # Limit to 5 paths for performance
         
         if not candidate_paths:
             return None
@@ -222,24 +325,35 @@ class RouteDiscovery:
         best_score = -1.0
         
         for path in candidate_paths:
-            # Cache evaluation results
-            path_tuple = tuple(path)
-            cache_key = (path_tuple, congestion_weight, stability_weight)
-            
-            if cache_key in self._evaluation_cache:
-                evaluation = self._evaluation_cache[cache_key].copy()
-            else:
-                evaluation = self.evaluate_path(path, congestion_weight, stability_weight)
-                self._evaluation_cache[cache_key] = evaluation.copy()
+            # Always evaluate fresh to get current congestion (dynamic load-aware routing)
+            # Don't use cache - congestion changes in real-time
+            evaluation = self.evaluate_path(path, congestion_weight, stability_weight)
             
             # Update stability score if provided
             if stability_scores:
                 path_stability = self._calculate_path_stability(path, stability_scores)
                 evaluation['stability_score'] = path_stability
-                evaluation['combined_score'] = (
-                    (1.0 - evaluation['congestion_score']) * congestion_weight +
-                    path_stability * stability_weight
-                )
+                # Recalculate combined score with stability, capacity, and path length
+                normalized_congestion = 1.0 - evaluation['congestion_score']
+                
+                # Get path capacity for this path
+                path_capacity = float('inf')
+                for i in range(len(path) - 1):
+                    u, v = path[i], path[i + 1]
+                    link_capacity = self.topology.get_link_capacity(u, v)
+                    path_capacity = min(path_capacity, link_capacity)
+                max_capacity = 100.0
+                normalized_capacity = min(path_capacity / max_capacity, 1.0) if max_capacity > 0 else 0.0
+                
+                # Combined score: congestion (60%) + stability (40%)
+                base_score = (normalized_congestion * congestion_weight +
+                             path_stability * stability_weight)
+                # Add capacity (20% weight)
+                base_score = base_score * 0.7 + normalized_capacity * 0.2
+                # Add path length (10% weight)
+                max_hops = 10
+                normalized_hops = 1.0 - (min(evaluation['hop_count'], max_hops) / max_hops)
+                evaluation['combined_score'] = base_score * 0.9 + normalized_hops * 0.1
             
             if evaluation['combined_score'] > best_score:
                 best_score = evaluation['combined_score']

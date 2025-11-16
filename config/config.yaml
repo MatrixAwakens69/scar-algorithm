@@ -4,12 +4,12 @@
 # Network Topology Settings
 network:
   # Number of nodes in the network
-  # Using 12 nodes for a more interesting topology
-  num_nodes: 12
+  # Using 6 nodes for a simpler topology
+  num_nodes: 6
   
-  # Network topology type: "ring", "grid", "star", "random", or "file"
-  # Grid: Nodes arranged in a grid pattern (good balance of simplicity and complexity)
-  topology_type: "grid"
+  # Network topology type: "ring", "grid", "star", "random", "custom_6", or "file"
+  # custom_6: Custom 6-node topology (not a simple hexagon)
+  topology_type: "custom_6"
   
   # File path for custom topology (if topology_type is "file")
   topology_file: null
@@ -69,12 +69,16 @@ simulation:
   # More packets for a more complex simulation
   num_packets: 80
   
+  # Burst size: number of packets generated per burst event
+  # Larger bursts create congestion faster, demonstrating path switching
+  burst_size: 3
+  
   # Packet generation rate (packets per time unit)
   packet_rate: 0.1
   
   # Packet size (bytes)
-  # Standard Ethernet frame size
-  packet_size: 1500
+  # Standard Ethernet frame size (increased by 10x)
+  packet_size: 15000
   
   # Traffic pattern: "constant", "bursty", "random"
   # Random: Packets generated at random times between random nodes

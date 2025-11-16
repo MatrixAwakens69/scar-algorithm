@@ -58,7 +58,8 @@ class InteractiveViewer:
         self.status_text = None
         self.log_text = None
         self.log_entries = []
-        self.max_log_entries = 50
+        self.max_log_entries = 6  # Maximum number of log entries to display
+        self.log_scroll_offset = 0  # Scroll offset for log window
         self.speed_selector = None
         self.current_speed = 1.0  # Default speed multiplier
         
@@ -98,11 +99,17 @@ class InteractiveViewer:
         self.ax_log.axis('off')
         self.log_text = self.ax_log.text(0.02, 0.98, '', 
                                          transform=self.ax_log.transAxes,
-                                         fontsize=8, verticalalignment='top',
+                                         fontsize=16, verticalalignment='top',  # 2x original (8 -> 16)
                                          family='monospace',
                                          bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.7))
-        self.log_entries = []  # Store log entries
-        self.max_log_entries = 50  # Maximum number of log entries to display
+        
+        # Add scroll buttons for log
+        ax_scroll_up = plt.axes([0.90, 0.22, 0.02, 0.03])
+        ax_scroll_down = plt.axes([0.90, 0.19, 0.02, 0.03])
+        self.btn_scroll_up = Button(ax_scroll_up, '▲')
+        self.btn_scroll_down = Button(ax_scroll_down, '▼')
+        self.btn_scroll_up.on_clicked(self._on_log_scroll_up)
+        self.btn_scroll_down.on_clicked(self._on_log_scroll_down)
         
         # Control buttons
         ax_play = plt.axes([0.52, 0.05, 0.08, 0.04])
@@ -210,6 +217,11 @@ class InteractiveViewer:
         sim_stats = stats.get('simulation', {})
         state = self.controller.state.value.upper()
         
+        # Get algorithm stats for utilization
+        algo_stats = stats.get('algorithm', {})
+        congestion_summary = algo_stats.get('congestion', {})
+        avg_utilization = congestion_summary.get('avg_utilization', 0.0)
+        
         status_lines = [
             f"State: {state}",
             f"Time: {self.controller.simulator.current_time:.2f}",
@@ -218,6 +230,7 @@ class InteractiveViewer:
             f"{sim_stats.get('active_packets', 0)} active",
             f"Delivery Ratio: {sim_stats.get('packet_delivery_ratio', 0):.2%}",
             f"Avg Delay: {sim_stats.get('avg_delay', 0):.2f}",
+            f"Utilization: {avg_utilization:.2%}",
         ]
         
         # Get last event info
@@ -242,15 +255,27 @@ class InteractiveViewer:
             if not self.log_entries or self.log_entries[-1] != log_entry:
                 self.log_entries.append(log_entry)
                 
-                # Keep only recent entries
-                if len(self.log_entries) > self.max_log_entries:
-                    self.log_entries = self.log_entries[-self.max_log_entries:]
+                # Keep more entries for scrolling (store up to 100 entries for scrollable log)
+                max_stored_entries = 100
+                if len(self.log_entries) > max_stored_entries:
+                    self.log_entries = self.log_entries[-max_stored_entries:]
+                    # Adjust scroll offset if we removed entries
+                    removed_count = len(self.log_entries) - max_stored_entries
+                    if removed_count > 0:
+                        self.log_scroll_offset = max(0, self.log_scroll_offset - removed_count)
         
-        # Update log text (show last N entries)
+        # Update log text (show entries based on scroll offset, scrollable)
         if self.log_entries:
-            # Show last entries (most recent at top)
-            display_entries = self.log_entries[-20:]  # Show last 20 entries
-            log_text = '\n'.join(reversed(display_entries))  # Most recent at top
+            # Calculate which entries to show based on scroll offset
+            total_entries = len(self.log_entries)
+            start_idx = max(0, total_entries - self.max_log_entries - self.log_scroll_offset)
+            end_idx = total_entries - self.log_scroll_offset
+            display_entries = self.log_entries[start_idx:end_idx] if end_idx > 0 else []
+            
+            if display_entries:
+                log_text = '\n'.join(display_entries)
+            else:
+                log_text = 'No more entries...'
         else:
             log_text = 'No events yet...'
         
@@ -555,3 +580,15 @@ class InteractiveViewer:
             self._start_animation()
         else:
             self._stop_animation()
+    
+    def _on_log_scroll_up(self, event):
+        """Scroll log window up (show older entries)."""
+        if self.log_entries:
+            max_scroll = max(0, len(self.log_entries) - self.max_log_entries)
+            self.log_scroll_offset = min(self.log_scroll_offset + 1, max_scroll)
+            self._update_log()
+    
+    def _on_log_scroll_down(self, event):
+        """Scroll log window down (show newer entries)."""
+        self.log_scroll_offset = max(0, self.log_scroll_offset - 1)
+        self._update_log()

@@ -6,9 +6,10 @@ This script runs the SCAR algorithm simulation with visualization.
 
 import yaml
 import sys
+import random
 from src.core.network_topology import NetworkTopology, load_topology_from_config
 from src.core.scar_algorithm import SCARAlgorithm
-from src.simulation.network_simulator import NetworkSimulator
+from src.simulation.network_simulator import NetworkSimulator, SimulationEvent, EventType
 from src.simulation.traffic_generator import TrafficGenerator
 from src.core.congestion_monitor import CongestionMonitor
 from src.visualization.network_renderer import NetworkRenderer
@@ -62,6 +63,9 @@ def main():
     print("Initializing network simulator...")
     simulator = NetworkSimulator(topology, scar_algorithm)
     
+    # Link simulator to route discovery for queueing delay calculation
+    scar_algorithm.route_discovery.simulator = simulator
+    
     # Initialize visualization components
     print("Initializing visualization...")
     # Use the congestion monitor from SCAR algorithm (they share the same instance)
@@ -80,11 +84,27 @@ def main():
     num_packets = sim_config.get('num_packets', 100)
     time_range = (0.0, sim_config.get('duration', 1000.0))
     
-    traffic_generator.generate_random_traffic(
-        num_packets=num_packets,
-        packet_size=sim_config.get('packet_size', 1500.0),
-        time_range=time_range
-    )
+    # Generate traffic with bursts - each event generates multiple packets
+    # This creates congestion quickly so the algorithm can demonstrate path switching
+    burst_size = sim_config.get('burst_size', 3)  # Packets per burst
+    num_bursts = max(1, num_packets // burst_size)  # Number of bursts
+    
+    for _ in range(num_bursts):
+        # Random generation time
+        gen_time = random.uniform(time_range[0], time_range[1])
+        
+        event = SimulationEvent(
+            event_type=EventType.PACKET_GENERATE,
+            time=gen_time,
+            data={
+                'source': 0,  # Fixed source
+                'destination': 5,  # Fixed destination
+                'size': sim_config.get('packet_size', 1500.0),
+                'burst_size': burst_size
+            },
+            priority=0
+        )
+        simulator.schedule_event(event)
     print(f"Generated {num_packets} packets")
     
     # Initialize interactive viewer (pass simulator, traffic_generator, and config for restart)
