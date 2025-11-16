@@ -74,12 +74,15 @@ class CongestionMonitor:
         
         Returns:
             'low', 'medium', or 'high'
+            - low: 0.0 to 0.25 (0-25% utilization)
+            - medium: 0.25 to 0.6 (25-60% utilization)
+            - high: 0.6 to 1.0 (60-100% utilization)
         """
         utilization = self.topology.get_link_utilization(node1, node2)
         
-        if utilization < self.congestion_threshold * 0.5:
+        if utilization < 0.25:
             return 'low'
-        elif utilization < self.congestion_threshold:
+        elif utilization < 0.6:
             return 'medium'
         else:
             return 'high'

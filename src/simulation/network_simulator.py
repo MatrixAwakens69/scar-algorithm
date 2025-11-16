@@ -315,27 +315,38 @@ class NetworkSimulator:
             
             # Generate burst of packets at the same time (or very close together)
             # This creates congestion quickly so algorithm can demonstrate path switching
-            for i in range(burst_size):
-                # Small time offset for packets in burst (0.001 seconds apart)
-                burst_time = self.current_time + (i * 0.001)
-                if i == 0:
-                    # First packet uses current time
-                    self.last_event_info = f"Packet burst generated: {source} -> {destination} (burst size: {burst_size})"
-                    self.generate_packet(source, destination, size)
-                else:
-                    # Schedule remaining packets in burst
-                    burst_event = SimulationEvent(
-                        event_type=EventType.PACKET_GENERATE,
-                        time=burst_time,
-                        data={
-                            'source': source,
-                            'destination': destination,
-                            'size': size,
-                            'burst_size': 1  # Individual packet
-                        },
-                        priority=0
-                    )
-                    self.schedule_event(burst_event)
+            if burst_size > 1:
+                # This is a burst event - generate all packets in the burst
+                # Spread packets in burst over a small time window (0.1 seconds) for better visualization
+                burst_window = 0.1  # Total time window for burst (seconds)
+                for i in range(burst_size):
+                    # Distribute packets evenly within the burst window
+                    burst_time = self.current_time + (i * burst_window / max(burst_size - 1, 1))
+                    if i == 0:
+                        # First packet uses current time
+                        self.last_event_info = f"Packet burst generated: {source} -> {destination} (burst size: {burst_size})"
+                        self.generate_packet(source, destination, size)
+                    else:
+                        # Schedule remaining packets in burst (mark as part of burst, not individual)
+                        burst_event = SimulationEvent(
+                            event_type=EventType.PACKET_GENERATE,
+                            time=burst_time,
+                            data={
+                                'source': source,
+                                'destination': destination,
+                                'size': size,
+                                'burst_size': 0  # 0 means part of a burst, don't log separately
+                            },
+                            priority=0
+                        )
+                        self.schedule_event(burst_event)
+            else:
+                # Single packet (burst_size = 1 or 0)
+                # Only log if it's a standalone packet (burst_size = 1), not part of a burst (burst_size = 0)
+                if burst_size == 1:
+                    self.last_event_info = f"Packet generated: {source} -> {destination}"
+                # If burst_size is 0, it's part of a burst, so don't log separately
+                self.generate_packet(source, destination, size)
         elif event.event_type == EventType.ROUTE_UPDATE:
             # Route update event
             self.last_event_info = "Route update triggered"

@@ -6,15 +6,17 @@ This module provides an interactive GUI for controlling the simulation.
 
 from typing import Optional
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, RadioButtons
+from matplotlib.widgets import Button, RadioButtons, Slider
 import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation
 import threading
 import time
+import random
 from src.visualization.simulation_controller import SimulationController, SimulationState
 from src.visualization.threaded_simulation import ThreadedSimulationController
 from src.visualization.metrics_dashboard import MetricsDashboard
 from src.visualization.packet_visualizer import PacketVisualizer
+from src.simulation.network_simulator import SimulationEvent, EventType
 
 
 class InteractiveViewer:
@@ -103,13 +105,21 @@ class InteractiveViewer:
                                          family='monospace',
                                          bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.7))
         
-        # Add scroll buttons for log
-        ax_scroll_up = plt.axes([0.90, 0.22, 0.02, 0.03])
-        ax_scroll_down = plt.axes([0.90, 0.19, 0.02, 0.03])
-        self.btn_scroll_up = Button(ax_scroll_up, '▲')
-        self.btn_scroll_down = Button(ax_scroll_down, '▼')
-        self.btn_scroll_up.on_clicked(self._on_log_scroll_up)
-        self.btn_scroll_down.on_clicked(self._on_log_scroll_down)
+        # Add scrollbar for log at the rightmost end of the log panel
+        # Position: right edge of log panel, same height as log panel
+        # Log panel is at [3, 2] with colspan=2, which is approximately [0.5, 0.19] to [0.98, 0.30] in figure coordinates
+        ax_scrollbar = plt.axes([0.96, 0.19, 0.015, 0.11])  # Rightmost end of log panel
+        ax_scrollbar.axis('off')
+        # Create vertical slider as scrollbar (no text labels)
+        # Max value is 0 (top), min value is negative (bottom)
+        # We'll use inverted values: 0 = newest (bottom), -max = oldest (top)
+        self.log_scrollbar = Slider(ax_scrollbar, '', valmin=0, valmax=100, valinit=0, 
+                                    orientation='vertical')
+        # Hide the value text to make it look like a proper scrollbar
+        self.log_scrollbar.valtext.set_visible(False)
+        # Style the scrollbar to look more like a native scrollbar
+        self.log_scrollbar.poly.set_alpha(0.7)  # Make slider handle slightly transparent
+        self.log_scrollbar.on_changed(self._on_log_scrollbar_changed)
         
         # Control buttons
         ax_play = plt.axes([0.52, 0.05, 0.08, 0.04])
@@ -130,14 +140,15 @@ class InteractiveViewer:
         self.btn_step.on_clicked(self._on_step_clicked)
         self.btn_restart.on_clicked(self._on_restart_clicked)
         
-        # Speed control - moved up above controls
-        ax_speed_label = plt.axes([0.79, 0.32, 0.12, 0.02])
+        # Speed control - placed to the right of info panel (status panel)
+        # Info panel is at [2, 2] which is middle right, so place speed to its right
+        ax_speed_label = plt.axes([0.92, 0.50, 0.07, 0.02])
         ax_speed_label.axis('off')
         ax_speed_label.text(0.5, 0.5, 'Speed:', ha='center', va='center', 
                            transform=ax_speed_label.transAxes, fontsize=10, weight='bold')
         
-        # Create radio buttons for speed selection - bigger area with better spacing
-        ax_speed = plt.axes([0.79, 0.22, 0.12, 0.10])
+        # Create radio buttons for speed selection - placed to the right of info panel
+        ax_speed = plt.axes([0.92, 0.30, 0.07, 0.20])
         ax_speed.axis('off')
         speed_options = ['0.25x', '0.5x', '1x', '2x', '4x']
         self.speed_selector = RadioButtons(ax_speed, speed_options, active=2)  # Default to 1x
@@ -268,6 +279,7 @@ class InteractiveViewer:
         if self.log_entries:
             # Calculate which entries to show based on scroll offset
             total_entries = len(self.log_entries)
+            max_scroll = max(0, total_entries - self.max_log_entries)
             start_idx = max(0, total_entries - self.max_log_entries - self.log_scroll_offset)
             end_idx = total_entries - self.log_scroll_offset
             display_entries = self.log_entries[start_idx:end_idx] if end_idx > 0 else []
@@ -276,8 +288,24 @@ class InteractiveViewer:
                 log_text = '\n'.join(display_entries)
             else:
                 log_text = 'No more entries...'
+            
+            # Update scrollbar position
+            # Scrollbar: 0 = newest (bottom), 100 = oldest (top)
+            if max_scroll > 0:
+                scrollbar_val = 100.0 * (1.0 - self.log_scroll_offset / max_scroll)
+            else:
+                scrollbar_val = 0.0
+            # Temporarily disconnect to avoid recursive updates
+            if hasattr(self, 'log_scrollbar'):
+                self.log_scrollbar.eventson = False
+                self.log_scrollbar.set_val(scrollbar_val)
+                self.log_scrollbar.eventson = True
         else:
             log_text = 'No events yet...'
+            if hasattr(self, 'log_scrollbar'):
+                self.log_scrollbar.eventson = False
+                self.log_scrollbar.set_val(0)
+                self.log_scrollbar.eventson = True
         
         self.log_text.set_text(log_text)
     
@@ -385,16 +413,80 @@ class InteractiveViewer:
         if self.log_text:
             self.log_text.set_text('Simulation restarted...')
         
-        # Regenerate traffic
+        # Regenerate traffic in bursts - ALL packets must be in bursts (3-7 packets per burst)
+        # Distribute bursts with maximum interval constraint to avoid large gaps
         sim_config = self.config.get('simulation', {})
         num_packets = sim_config.get('num_packets', 100)
         time_range = (0.0, sim_config.get('duration', 1000.0))
         
-        self.traffic_generator.generate_random_traffic(
-            num_packets=num_packets,
-            packet_size=sim_config.get('packet_size', 1500.0),
-            time_range=time_range
-        )
+        start_time, end_time = time_range
+        time_span = end_time - start_time
+        
+        # Maximum interval between bursts (in time units) - ensures no large gaps
+        max_burst_interval = 0.3  # Maximum 0.3ms between bursts
+        
+        # Calculate minimum number of bursts needed to avoid gaps
+        # Use minimum burst size of 4 to calculate maximum number of bursts
+        min_burst_size = 4
+        max_num_bursts = num_packets // min_burst_size  # Maximum bursts if all are size 4
+        
+        # Calculate required number of bursts based on max interval
+        required_bursts_by_interval = int(time_span * 0.95 / max_burst_interval)  # Use 95% of duration
+        
+        # Use the larger of the two to ensure we have enough bursts
+        num_bursts = max(1, min(max_num_bursts, required_bursts_by_interval))
+        
+        # Distribute bursts evenly across the entire duration
+        active_duration = time_span * 0.95
+        burst_interval = active_duration / max(num_bursts, 1)
+        
+        # Ensure burst interval doesn't exceed maximum
+        if burst_interval > max_burst_interval:
+            # Recalculate with more bursts
+            num_bursts = max(num_bursts, int(active_duration / max_burst_interval))
+            burst_interval = active_duration / max(num_bursts, 1)
+        
+        packets_generated = 0
+        burst_count = 0
+        
+        current_time = start_time
+        
+        while packets_generated < num_packets and current_time < end_time - 0.5:
+            # Calculate how many packets we still need
+            remaining_packets = num_packets - packets_generated
+            
+            # ALWAYS use burst size between 4-10, never exceed this range
+            if remaining_packets <= 10:
+                # If remaining packets are 10 or less, use all of them (but at least 4 if possible)
+                burst_size = max(1, remaining_packets)  # Use remaining, but allow 1-3 if that's all that's left
+            else:
+                # Random burst size between 4-10
+                burst_size = random.randint(4, 10)
+            
+            # Generate burst event with all packets
+            event = SimulationEvent(
+                event_type=EventType.PACKET_GENERATE,
+                time=current_time,
+                data={
+                    'source': 0,  # Fixed source
+                    'destination': 7,  # Fixed destination (sink)
+                    'size': sim_config.get('packet_size', 1500.0),
+                    'burst_size': burst_size  # All packets in this burst
+                },
+                priority=0
+            )
+            self.simulator.schedule_event(event)
+            packets_generated += burst_size
+            burst_count += 1
+            
+            # Move to next burst time
+            # Use calculated interval with small random variation (±10%)
+            next_interval = burst_interval * random.uniform(0.9, 1.1)
+            current_time += next_interval
+            
+            # Stop if we've generated enough packets
+            if packets_generated >= num_packets:
+                break
         
         # Update visualization (non-blocking)
         self.controller.update()
@@ -581,14 +673,12 @@ class InteractiveViewer:
         else:
             self._stop_animation()
     
-    def _on_log_scroll_up(self, event):
-        """Scroll log window up (show older entries)."""
+    def _on_log_scrollbar_changed(self, val):
+        """Handle scrollbar value change."""
         if self.log_entries:
+            # Scrollbar value: 0 = newest (bottom), max = oldest (top)
+            # Convert scrollbar value to scroll offset
             max_scroll = max(0, len(self.log_entries) - self.max_log_entries)
-            self.log_scroll_offset = min(self.log_scroll_offset + 1, max_scroll)
+            # Invert: scrollbar max (100) = scroll offset 0 (newest), scrollbar 0 = scroll offset max (oldest)
+            self.log_scroll_offset = int(max_scroll * (1.0 - val / 100.0))
             self._update_log()
-    
-    def _on_log_scroll_down(self, event):
-        """Scroll log window down (show newer entries)."""
-        self.log_scroll_offset = max(0, self.log_scroll_offset - 1)
-        self._update_log()

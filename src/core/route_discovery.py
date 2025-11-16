@@ -107,7 +107,7 @@ class RouteDiscovery:
         except (nx.NetworkXNoPath, StopIteration):
             return []
     
-    def _calculate_link_delay(self, u: int, v: int, packet_size: float = 15000.0) -> float:
+    def _calculate_link_delay(self, u: int, v: int, packet_size: float = 37500.0) -> float:
         """
         Calculate total delay for a link (transmission + queueing).
         
@@ -133,7 +133,7 @@ class RouteDiscovery:
             if queue_length > 0 and link_capacity > 0:
                 # Estimate queueing delay: packets in queue * transmission time per packet
                 # This is a simplified model - in reality, queueing depends on arrival/service rates
-                avg_packet_size = 15000.0  # bytes
+                avg_packet_size = 37500.0  # bytes (2.5x of previous 15000)
                 service_time = (avg_packet_size * 8) / (link_capacity * 1e6)
                 queueing_delay = queue_length * service_time
         
@@ -149,7 +149,7 @@ class RouteDiscovery:
         """
         # Always rebuild weighted graph to get current delay values (dynamic routing)
         weighted_graph = self.topology.graph.copy()
-        packet_size = 4000.0  # Standard packet size (increased by 10x)
+        packet_size = 37500.0  # Standard packet size (increased by 10x, then 2.5x more = 25x total)
         
         for u, v in weighted_graph.edges():
             # Calculate total delay (transmission + queueing)
@@ -244,7 +244,7 @@ class RouteDiscovery:
             path_capacity = min(path_capacity, link_capacity)
         
         # Normalize capacity (0.0 to 1.0, higher is better)
-        max_capacity = 10.0  # Reduced from 100.0 (capacities are now 10x smaller)
+        max_capacity = 45.0  # Updated to match new capacity range: (300/10)*3*0.5=45 Mbps max (reduced by half)
         normalized_capacity = min(path_capacity / max_capacity, 1.0) if max_capacity > 0 else 0.0
         
         # Normalize delay (lower is better) - convert to score (higher is better)

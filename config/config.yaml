@@ -1,23 +1,29 @@
 # SCAR Algorithm Configuration
 # Moderately Complex Network Topology
+#
+# IMPORTANT: This configuration file is loaded by main.py and values are used throughout the codebase.
+# All values here are imported via yaml.safe_load() in main.py and passed to respective components.
+# Some values may have transformations applied (e.g., link capacities are divided by 10 in network_topology.py).
 
 # Network Topology Settings
 network:
   # Number of nodes in the network
-  # Using 6 nodes for a simpler topology
-  num_nodes: 6
+  # Using 8 nodes for a more complicated topology
+  num_nodes: 8
   
-  # Network topology type: "ring", "grid", "star", "random", "custom_6", or "file"
-  # custom_6: Custom 6-node topology (not a simple hexagon)
-  topology_type: "custom_6"
+  # Network topology type: "ring", "grid", "star", "random", "custom_6", "custom_8", or "file"
+  # custom_8: Custom 8-node topology with 15 links (more complicated)
+  topology_type: "custom_8"
   
   # File path for custom topology (if topology_type is "file")
   topology_file: null
   
   # Link capacity range (Mbps)
-  # Varying capacities to create more realistic network conditions
-  link_capacity_min: 30
-  link_capacity_max: 100
+  # NOTE: These values are divided by 10, then multiplied by 3 in the code (network_topology.py line 133-134)
+  # So 10-300 in config becomes 3-90 Mbps actual capacity (wide range for path diversity)
+  # Wide variation in capacities to encourage path diversity (not just shortest path)
+  link_capacity_min: 10
+  link_capacity_max: 300
   
   # Initial link latency (ms)
   # Slight variation in latency for realism
@@ -70,15 +76,17 @@ simulation:
   num_packets: 80
   
   # Burst size: number of packets generated per burst event
-  # Larger bursts create congestion faster, demonstrating path switching
+  # NOTE: This value is NOT used directly - the code generates random burst sizes between 3-7
+  # (see main.py line 97 and interactive_viewer.py line 425)
+  # This field is kept for reference/documentation only
   burst_size: 3
   
   # Packet generation rate (packets per time unit)
   packet_rate: 0.1
   
   # Packet size (bytes)
-  # Standard Ethernet frame size (increased by 10x)
-  packet_size: 15000
+  # Standard Ethernet frame size (increased by 10x, then 2.5x more = 25x total)
+  packet_size: 37500
   
   # Traffic pattern: "constant", "bursty", "random"
   # Random: Packets generated at random times between random nodes
@@ -105,9 +113,9 @@ visualization:
   
   # Color scheme for congestion levels
   congestion_colors:
-    low: "#00FF00"      # Green - Low congestion (< 35% utilization)
-    medium: "#FFFF00"   # Yellow - Medium congestion (35-70% utilization)
-    high: "#FF0000"     # Red - High congestion (> 70% utilization)
+    low: "#00FF00"      # Green - Low congestion (0-25% utilization)
+    medium: "#FFFF00"   # Yellow - Medium congestion (25-60% utilization)
+    high: "#FF0000"     # Red - High congestion (60-100% utilization)
   
   # Export settings
   export_images: false

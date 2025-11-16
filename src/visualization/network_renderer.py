@@ -84,7 +84,7 @@ class NetworkRenderer:
         congestion_level = self.congestion_monitor.get_congestion_level(node1, node2)
         color = self.congestion_colors.get(congestion_level, '#808080')
         
-        # Cache the result
+        # Always update cache (don't rely on cache_dirty flag for real-time updates)
         self._link_color_cache[link_key] = color
         return color
     
@@ -133,6 +133,11 @@ class NetworkRenderer:
             self.fig, self.ax = plt.subplots(figsize=self.figsize)
         
         self.ax.clear()
+        
+        # Clear cache before rendering to ensure real-time congestion colors
+        # This ensures colors update immediately when congestion changes
+        self._link_color_cache.clear()
+        self._cache_dirty = True
         
         # Draw links
         for u, v in self.topology.get_edges():
@@ -209,7 +214,7 @@ class NetworkRenderer:
         
         # Combine legends
         all_legend = legend_elements + line_legend
-        self.ax.legend(handles=all_legend, loc='upper left', fontsize=8)
+        self.ax.legend(handles=all_legend, loc='upper right', fontsize=8)
         
         self.ax.set_title(title)
         self.ax.axis('off')

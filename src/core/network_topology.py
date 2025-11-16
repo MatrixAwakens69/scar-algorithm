@@ -40,6 +40,8 @@ class NetworkTopology:
             self._create_star_topology(num_nodes)
         elif topology_type == 'custom_6':
             self._create_custom_6_topology()
+        elif topology_type == 'custom_8':
+            self._create_custom_8_topology()
         elif topology_type == 'file':
             self._load_from_file(self.config.get('topology_file'))
         else:
@@ -115,6 +117,53 @@ class NetworkTopology:
         self.graph.add_edge(3, 5)
         self.graph.add_edge(1, 2)
     
+    def _create_custom_8_topology(self):
+        """Create a custom 8-node topology with 15 links (more complicated).
+        
+        Creates a topology with 8 nodes and 15 links for more complexity:
+        - Node 0 (source) connected to nodes 1, 2, 3
+        - Node 1 connected to nodes 4, 5
+        - Node 2 connected to nodes 5, 6
+        - Node 3 connected to nodes 6, 7
+        - Node 4 connected to node 7 (destination)
+        - Additional cross-connections for path diversity
+        """
+        self.graph = nx.Graph()
+        # Add 8 nodes
+        for i in range(8):
+            self.graph.add_node(i)
+        
+        # Create connections: 15 links total
+        # Source node 0 connections
+        self.graph.add_edge(0, 1)
+        self.graph.add_edge(0, 2)
+        self.graph.add_edge(0, 3)
+        
+        # Node 1 connections
+        self.graph.add_edge(1, 4)
+        self.graph.add_edge(1, 5)
+        
+        # Node 2 connections
+        self.graph.add_edge(2, 5)
+        self.graph.add_edge(2, 6)
+        
+        # Node 3 connections
+        self.graph.add_edge(3, 6)
+        self.graph.add_edge(3, 7)
+        
+        # Node 4 connections (to destination 7)
+        self.graph.add_edge(4, 7)
+        
+        # Additional cross-connections for path diversity
+        self.graph.add_edge(1, 2)  # Cross-connection between 1 and 2
+        self.graph.add_edge(5, 6)  # Cross-connection between 5 and 6
+        self.graph.add_edge(6, 7)  # Additional path to destination
+        self.graph.add_edge(4, 5)  # Additional path option
+        self.graph.add_edge(2, 3)  # Additional cross-connection between 2 and 3
+        
+        # Verify we have 15 links
+        assert self.graph.number_of_edges() == 15, f"Expected 15 links, got {self.graph.number_of_edges()}"
+    
     def _load_from_file(self, filepath: str):
         """Load topology from file."""
         # This would load from a file format (e.g., GraphML, JSON)
@@ -127,16 +176,19 @@ class NetworkTopology:
         capacity_max = self.config.get('link_capacity_max', 100)
         initial_latency = self.config.get('initial_latency', 5)
         
-        # Reduce capacities by factor of 10
-        capacity_min = capacity_min / 10.0
-        capacity_max = capacity_max / 10.0
+        # Reduce capacities by factor of 10, then increase by factor of 3, then reduce by half
+        # Original: capacity_min/10, capacity_max/10
+        # Then: (capacity_min/10) * 3, (capacity_max/10) * 3
+        # Now: (capacity_min/10) * 3 * 0.5, (capacity_max/10) * 3 * 0.5 (reduced by half)
+        capacity_min = (capacity_min / 10.0) * 3.0 * 0.5
+        capacity_max = (capacity_max / 10.0) * 3.0 * 0.5
         
         for u, v in self.graph.edges():
-            # Random capacity within range (reduced by 10x)
+            # Random capacity within range (reduced by 10x, then increased by 3x, then reduced by half)
             capacity = random.uniform(capacity_min, capacity_max)
             
             # Set link attributes
-            self.graph[u][v]['capacity'] = capacity  # Mbps (reduced by 10x)
+            self.graph[u][v]['capacity'] = capacity  # Mbps (reduced by 10x, then 3x, then 0.5x)
             self.graph[u][v]['current_load'] = 0.0  # Mbps
             self.graph[u][v]['utilization'] = 0.0  # 0.0 to 1.0
             self.graph[u][v]['latency'] = initial_latency  # ms

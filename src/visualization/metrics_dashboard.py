@@ -199,7 +199,7 @@ class MetricsDashboard:
         if len(self.packet_delivery_history) > 0 and len(self.packet_delivery_history) == len(time_list):
             ax.plot(time_list, list(self.packet_delivery_history), 'b-', 
                    label='Delivery Ratio', linewidth=2, alpha=0.8)
-        ax.set_ylabel('Delivery Ratio', color='b', fontsize=9)
+        # Removed y-axis label - legend already indicates this
         ax.set_ylim(0, 1)
         ax.yaxis.set_major_locator(MaxNLocator(nbins=5, integer=False))  # Limit to ~5 ticks
         ax.tick_params(axis='y', labelcolor='b', labelsize=8)
@@ -209,7 +209,7 @@ class MetricsDashboard:
         if len(self.avg_delay_history) > 0 and len(self.avg_delay_history) == len(time_list):
             ax2.plot(time_list, list(self.avg_delay_history), 'r-', 
                     label='Avg Delay', linewidth=2, alpha=0.8)
-        ax2.set_ylabel('Delay', color='r', fontsize=9)
+        # Removed y-axis label - legend already indicates this
         ax2.yaxis.set_major_locator(MaxNLocator(nbins=5, integer=False))  # Limit to ~5 ticks
         ax2.tick_params(axis='y', labelcolor='r', labelsize=8)
         
@@ -217,7 +217,7 @@ class MetricsDashboard:
         if len(self.congestion_history) > 0 and len(self.congestion_history) == len(time_list):
             ax3.plot(time_list, list(self.congestion_history), 'g-', 
                     label='Utilization', linewidth=2, alpha=0.8)
-        ax3.set_ylabel('Utilization', color='g', fontsize=9)
+        # Removed y-axis label - legend already indicates this
         ax3.set_ylim(0, 1)
         ax3.yaxis.set_major_locator(MaxNLocator(nbins=5, integer=False))  # Limit to ~5 ticks
         ax3.tick_params(axis='y', labelcolor='g', labelsize=8)
